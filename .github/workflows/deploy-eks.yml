@@ -67,11 +67,13 @@ jobs:
           password: ${{ secrets.dockerhub_token }}
           
       - name: Build and Push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v4  # ← Version 4 sans cache forcé
         with:
           context: .
           push: true
           tags: ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}
+          # cache-from:
+          # cache-to:
 
   deploy:
     runs-on: ubuntu-latest
@@ -112,7 +114,6 @@ jobs:
         run: |
           echo "⏳ Attente de la provision du LoadBalancer AWS..."
           
-          # Attendre maximum 3 minutes que le LoadBalancer soit disponible
           for i in {1..18}; do
             EXTERNAL_IP=$(kubectl get svc ${{ inputs.app_name }}-svc -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
             
