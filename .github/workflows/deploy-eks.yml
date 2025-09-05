@@ -84,14 +84,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
-      - name: Clean AWS configuration
-        run: |
-          # Nettoyage plus complet des configurations
-          rm -rf ~/.aws
-          mkdir -p ~/.aws
-          echo "[default]" > ~/.aws/config
-          echo "region = ${{ inputs.aws_region }}" >> ~/.aws/config
           
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
