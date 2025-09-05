@@ -64,9 +64,8 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          docker build -t ${{ inputs.app_name }}:${{ inputs.image_tag }} .
-          docker tag ${{ inputs.app_name }}:${{ inputs.image_tag }} ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}
-          docker push ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}
+            docker build -t ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }} .
+            docker push ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}
 
   deploy:
     runs-on: ubuntu-22.04
