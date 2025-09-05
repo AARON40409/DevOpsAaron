@@ -55,28 +55,25 @@ jobs:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
     outputs:
-      full_image_tag: ${{ steps.build-image.outputs.full_image_tag }}
+      full_image_tag: ${{ steps.set-tag.outputs.full_image_tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: DockerHub Login
-        uses: docker/login-action@v3
-        with:
-          username: ${{ inputs.dockerhub_username }}
-          password: ${{ secrets.dockerhub_token }}
+        run: |
+          echo "${{ secrets.dockerhub_token }}" | docker login -u ${{ inputs.dockerhub_username }} --password-stdin
 
-      - name: Build and Push Docker image
-        id: build-image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}
-            ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:latest
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }} .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}
 
       - name: Set full image tag output
+        id: set-tag
         run: |
           echo "full_image_tag=${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
 
