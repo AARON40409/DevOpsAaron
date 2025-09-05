@@ -1,0 +1,172 @@
+name: EKS Deployment Workflow
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        required: true
+        type: string
+        description: "Application name"
+      image_tag:
+        required: true
+        type: string
+        description: "Docker image tag"
+      eks_cluster_name:
+        required: true
+        type: string
+        description: "EKS cluster name"
+      aws_region:
+        required: true
+        type: string
+        description: "AWS region"
+        default: "us-east-1"
+      k8s_manifest_path:
+        required: false
+        type: string
+        description: "Path to Kubernetes manifests"
+        default: "k8s/"
+      dockerhub_username:
+        required: true
+        type: string
+        description: "DockerHub username"
+      deploy_stage:
+        required: true
+        type: string
+        description: "Deployment stage"
+      timeout_seconds:
+        required: false
+        type: number
+        description: "Rollout timeout in seconds"
+        default: 300
+
+    secrets:
+      dockerhub_token:
+        required: true
+        description: "DockerHub token/password"
+      aws_access_key_id:
+        required: true
+        description: "AWS access key ID"
+      aws_secret_access_key:
+        required: true
+        description: "AWS secret access key"
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    outputs:
+      full_image_tag: ${{ steps.build-image.outputs.full_image_tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: DockerHub Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ inputs.dockerhub_username }}
+          password: ${{ secrets.dockerhub_token }}
+
+      - name: Build and Push Docker image
+        id: build-image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}
+            ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Set full image tag output
+        run: |
+          echo "full_image_tag=${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}" >> $GITHUB_OUTPUT
+
+  deploy-to-eks:
+    name: Deploy to EKS Cluster
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment:
+      name: ${{ inputs.deploy_stage }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.aws_access_key_id }}
+          aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Connect to EKS cluster
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ inputs.aws_region }} \
+            --name ${{ inputs.eks_cluster_name }}
+
+      - name: Update Kubernetes manifests with new image
+        run: |
+          echo "Updating image in Kubernetes manifests..."
+          echo "New image: ${{ needs.build-and-push.outputs.full_image_tag }}"
+          
+          # Mise à jour de l'image dans les fichiers YAML
+          find ${{ inputs.k8s_manifest_path }} -name "*.yml" -o -name "*.yaml" | while read file; do
+            if grep -q "image:" "$file"; then
+              sed -i "s|image:.*|image: ${{ needs.build-and-push.outputs.full_image_tag }}|g" "$file"
+              echo "✅ Updated image in $file"
+            fi
+          done
+
+      - name: Deploy to Kubernetes
+        run: |
+          echo "Applying Kubernetes manifests..."
+          kubectl apply -f ${{ inputs.k8s_manifest_path }} --recursive
+
+      - name: Wait for rollout completion
+        run: |
+          echo "Waiting for deployment rollout..."
+          kubectl rollout status deployment/${{ inputs.app_name }} \
+            --timeout=${TIMEOUT_SECONDS}s
+        env:
+          TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+
+      - name: Verify service status
+        id: service-status
+        run: |
+          # Vérifier le status du service
+          kubectl get svc ${{ inputs.app_name }}-svc -o wide
+          
+          # Attendre l'IP externe si LoadBalancer
+          if kubectl get svc ${{ inputs.app_name }}-svc -o jsonpath='{.spec.type}' | grep -q "LoadBalancer"; then
+            echo "⏳ Waiting for LoadBalancer provisioning..."
+            for i in {1..12}; do
+              EXTERNAL_IP=$(kubectl get svc ${{ inputs.app_name }}-svc -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+              
+              if [ -n "$EXTERNAL_IP" ]; then
+                echo "✅ LoadBalancer provisioned: $EXTERNAL_IP"
+                echo "service_url=http://$EXTERNAL_IP" >> $GITHUB_OUTPUT
+                break
+              fi
+              
+              if [ $i -eq 12 ]; then
+                echo "⚠️ LoadBalancer not yet provisioned after 2 minutes"
+                echo "service_url=pending" >> $GITHUB_OUTPUT
+                break
+              fi
+              
+              sleep 10
+            done
+          else
+            echo "ℹ️ Service is not of type LoadBalancer"
+            echo "service_url=not-applicable" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Show deployment status
+        run: |
+          echo "🎉 Deployment completed successfully!"
+          echo "📦 Application: ${{ inputs.app_name }}"
+          echo "🏷️  Image tag: ${{ inputs.image_tag }}"
+          echo "🌐 Cluster: ${{ inputs.eks_cluster_name }}"
+          echo "📊 Pod status:"
+          kubectl get pods -l app=${{ inputs.app_name }}
