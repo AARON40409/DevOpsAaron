@@ -93,10 +93,8 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
           
       - name: Connect to EKS cluster
-        run: |
-          aws eks update-kubeconfig \
-            --region ${{ inputs.aws_region }} \
-            --name ${{ inputs.eks_cluster_name }}
+        run: aws eks update-kubeconfig --region ${{ inputs.aws_region }} --name ${{ inputs.eks_cluster_name }}
+        
             
       - name: Deploy to Kubernetes 
         run: |
