@@ -85,6 +85,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         
+      - name: Clean existing AWS config
+        run: |
+          # Nettoyer les anciennes configurations corrompues
+          rm -rf ~/.aws
+          mkdir -p ~/.aws
+          
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -92,13 +98,29 @@ jobs:
           aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
           aws-region: ${{ inputs.aws_region }}
           
+      - name: Verify AWS configuration
+        run: |
+          echo "Vérification de la configuration AWS..."
+          cat ~/.aws/credentials
+          echo "---"
+          cat ~/.aws/config
+          echo "---"
+          aws sts get-caller-identity
+          
       - name: Connect to EKS cluster
-        run: aws eks update-kubeconfig --region ${{ inputs.aws_region }} --name ${{ inputs.eks_cluster_name }}
-        
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ inputs.aws_region }} \
+            --name ${{ inputs.eks_cluster_name }}
             
+      - name: Verify EKS connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+          
       - name: Deploy to Kubernetes 
         run: |
-          sed -i "s|image:.*|image: ${{ secrets.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}|" ${{ inputs.k8s_manifest_path }}/secret-game-deployment.yml
+          sed -i "s|image:.*|image: ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}|" ${{ inputs.k8s_manifest_path }}/secret-game-deployment.yml
           kubectl apply -f ${{ inputs.k8s_manifest_path }}
 
       - name: Wait for rollout
