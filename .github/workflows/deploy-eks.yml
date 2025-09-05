@@ -53,19 +53,25 @@ on:
 jobs:
   build:
     name: Build and push to DockerHub
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ inputs.image_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Login to DockerHub
-        run: echo "${{ secrets.dockerhub_token }}" | docker login -u ${{ inputs.dockerhub_username }} --password-stdin
+      - name: DockerHub Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ inputs.dockerhub_username }}
+          password: ${{ secrets.dockerhub_token }}
 
-      - name: Build and push Docker image
-        run: |
-            docker build -t ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }} .
-            docker push ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ inputs.dockerhub_username }}/${{ env.DOCKER_IMAGE_NAME }}:${{ inputs.image_tag }}
 
   deploy:
     runs-on: ubuntu-22.04
