@@ -252,8 +252,6 @@ jobs:
           tags: |
             ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}
             ${{ inputs.dockerhub_username }}/${{ inputs.app_name }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Set full image tag output
         run: |
