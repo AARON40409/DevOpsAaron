@@ -80,7 +80,7 @@ jobs:
     needs: build
     name: Deploy to k8s cluster
     environment:
-      name: Production
+      name: ${{ inputs.deploy_stage }}
       url: ${{ steps.get-service-url.outputs.SERVICE_URL }}
     steps:
       - name: Checkout code
@@ -94,20 +94,30 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
           
       - name: Connect to EKS cluster
-        run: aws eks update-kubeconfig --region ${{ inputs.aws_region }} --name ${{ inputs.eks_cluster_name }}
+        run: |
+          aws sts get-caller-identity
+          aws eks update-kubeconfig \
+            --region ${{ inputs.aws_region }} \
+            --name ${{ inputs.eks_cluster_name }}
             
       - name: Deploy to Kubernetes 
         run: |
-          sed -i "s|image:.*|image: ${{ secrets.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}|" k8s/secret-game-deployment.yml
-          kubectl apply -f k8s/
+          # Mise à jour de l'image dans le deployment
+          sed -i "s|image:.*|image: ${{ secrets.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}|" ${{ inputs.k8s_manifest_path }}secret-game-deployment.yml
+          
+          # Application des manifests
+          kubectl apply -f ${{ inputs.k8s_manifest_path }}
+          
+          # Vérification du déploiement
+          kubectl rollout status deployment/secret-game-deployment --timeout=${{ inputs.timeout_seconds }}s
 
       - name: Wait for LoadBalancer provisioning
         id: get-service-url
         run: |
           echo "⏳ Attente de la provision du LoadBalancer AWS..."
           
-          # Attendre maximum 3 minutes que le LoadBalancer soit disponible
-          for i in {1..18}; do
+          # Attendre maximum 5 minutes que le LoadBalancer soit disponible
+          for i in {1..30}; do
             EXTERNAL_IP=$(kubectl get svc secret-game-svc -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
             
             if [ -n "$EXTERNAL_IP" ]; then
@@ -116,11 +126,12 @@ jobs:
               break
             fi
             
-            if [ $i -eq 18 ]; then
-              echo "❌ Timeout - LoadBalancer non provisionné après 3 minutes"
+            if [ $i -eq 30 ]; then
+              echo "❌ Timeout - LoadBalancer non provisionné après 5 minutes"
               echo "SERVICE_URL=LoadBalancer-en-attente" >> $GITHUB_OUTPUT
               exit 0
             fi
             
+            echo "⏳ Attente ($i/30)..."
             sleep 10
           done
