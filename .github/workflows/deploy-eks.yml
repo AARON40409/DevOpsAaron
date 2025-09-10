@@ -128,8 +128,8 @@ jobs:
 
           # Création du secret Kubernetes sous une clé unique 'config'
           kubectl create secret generic secret-game-secret \
-            --from-literal=config="$ENV_SECRET" \
-            --dry-run=client -o yaml | kubectl apply -f -
+          --from-literal=APP_CONFIG="$ENV_SECRET" \
+          --dry-run=client -o yaml | kubectl apply -f -
                   
       - name: Deploy to Kubernetes 
         run: |
