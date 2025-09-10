@@ -48,6 +48,12 @@ on:
       aws_secret_access_key:
         required: true
         description: "AWS secret access key"
+      dev_env:
+        required: false
+      stg_env:
+        required: false
+      prod_env:
+        required: false  
 
 jobs:
   build:
@@ -99,6 +105,23 @@ jobs:
           aws eks update-kubeconfig \
             --region ${{ inputs.aws_region }} \
             --name ${{ inputs.eks_cluster_name }}
+
+      - name: Select environment secret
+        id: env-secret
+        run: |
+          if [ "${{ inputs.deploy_env }}" == "staging" ]; then
+            echo "ENV_SECRET=STG_ENV" >> $GITHUB_OUTPUT
+          elif [ "${{ inputs.deploy_env }}" == "prod" ]; then
+            echo "ENV_SECRET=PROD_ENV" >> $GITHUB_OUTPUT
+          else
+            echo "ENV_SECRET=DEV_ENV" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Kubernetes secret from GitHub secret
+        run: |
+          echo "${{ secrets[steps.env-secret.outputs.ENV_SECRET] }}" | \
+          tr '\n' '\0' | xargs -0 -I {} kubectl create secret generic secret-game-secret \
+          --from-literal="{}" --dry-run=client -o yaml | kubectl apply -f -      
             
       - name: Deploy to Kubernetes 
         run: |
