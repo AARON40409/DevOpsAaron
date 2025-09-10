@@ -119,10 +119,14 @@ jobs:
 
       - name: Create Kubernetes secret from GitHub secret
         run: |
-          echo "${{ secrets[steps.env-secret.outputs.ENV_SECRET] }}" | \
+          SECRET_CONTENT="${{ secrets[steps.env-secret.outputs.ENV_SECRET] }}"
+           echo "DEBUG: Secret sélectionné = ${{ steps.env-secret.outputs.ENV_SECRET }}"
+          echo "DEBUG: Contenu = '$SECRET_CONTENT'"
+          
+          echo "$SECRET_CONTENT" | \
           tr '\n' '\0' | xargs -0 -I {} kubectl create secret generic secret-game-secret \
-          --from-literal="{}" --dry-run=client -o yaml | kubectl apply -f -      
-            
+          --from-literal="{}" --dry-run=client -o yaml | kubectl apply -f -   
+                  
       - name: Deploy to Kubernetes 
         run: |
           # Mise à jour de l'image dans le deployment
