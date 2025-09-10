@@ -106,30 +106,29 @@ jobs:
             --region ${{ inputs.aws_region }} \
             --name ${{ inputs.eks_cluster_name }}
 
-      - name: Select environment secret
-        id: env-secret
-        run: |
-          if [ "${{ inputs.deploy_stage }}" ]; then
-            echo "ENV_SECRET=stg_env" >> $GITHUB_OUTPUT
-          elif [ "${{ inputs.deploy_stage }}" == "prod" ]; then
-            echo "ENV_SECRET=prod_env" >> $GITHUB_OUTPUT
-          else
-            echo "ENV_SECRET=dev_env" >> $GITHUB_OUTPUT
-          fi
-
       - name: Create Kubernetes secret from GitHub secret
         run: |
-            echo "DEBUG: Secret sélectionné = ${{ steps.env-secret.outputs.ENV_SECRET }}"
-            echo "DEBUG: PROD_ENV = $([ -n "${{ secrets.prod_env }}" ] && echo 'a du contenu' || echo 'vide')"
-            echo "DEBUG: STG_ENV = $([ -n "${{ secrets.stg_env }}" ] && echo 'a du contenu' || echo 'vide')"
-            echo "DEBUG: DEV_ENV = $([ -n "${{ secrets.dev_env }}" ] && echo 'a du contenu' || echo 'vide')"
-            
-            SECRET_CONTENT="${{ secrets[steps.env-secret.outputs.ENV_SECRET] }}"
-            echo "DEBUG: Contenu final = '$SECRET_CONTENT'"
-            
-            echo "$SECRET_CONTENT" | \
-            tr '\n' '\0' | xargs -0 -I {} kubectl create secret generic secret-game-secret \
-            --from-literal="{}" --dry-run=client -o yaml | kubectl apply -f -  
+          # Sélection de l'environnement
+          if [ "${{ inputs.deploy_stage }}" == "prod" ]; then
+            ENV_SECRET="prod_env"
+          elif [ "${{ inputs.deploy_stage }}" == "stg" ]; then
+            ENV_SECRET="stg_env"
+          else
+            ENV_SECRET="dev_env"
+          fi
+
+          echo "DEBUG: Secret sélectionné = $ENV_SECRET"
+
+          # Récupération du contenu du secret correspondant
+          SECRET_CONTENT="${{ secrets[${ENV_SECRET}] }}"
+
+          # Vérification du contenu (optionnel)
+          echo "DEBUG: Contenu final = '${SECRET_CONTENT:0:10}...'"  # Affiche juste les 10 premiers caractères
+
+          # Création du secret Kubernetes sous une clé unique 'config'
+          kubectl create secret generic secret-game-secret \
+            --from-literal=config="$SECRET_CONTENT" \
+            --dry-run=client -o yaml | kubectl apply -f -
                   
       - name: Deploy to Kubernetes 
         run: |
