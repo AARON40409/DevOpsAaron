@@ -110,19 +110,19 @@ jobs:
         id: env-secret
         run: |
           if [ "${{ inputs.deploy_stage }}" == "stg" ]; then
-            echo "ENV_SECRET=STG_ENV" >> $GITHUB_OUTPUT
+            echo "ENV_SECRET=stg_env" >> $GITHUB_OUTPUT
           elif [ "${{ inputs.deploy_stage }}" == "prod" ]; then
-            echo "ENV_SECRET=PROD_ENV" >> $GITHUB_OUTPUT
+            echo "ENV_SECRET=prod_env" >> $GITHUB_OUTPUT
           else
-            echo "ENV_SECRET=DEV_ENV" >> $GITHUB_OUTPUT
+            echo "ENV_SECRET=dev_env" >> $GITHUB_OUTPUT
           fi
 
       - name: Create Kubernetes secret from GitHub secret
         run: |
             echo "DEBUG: Secret sélectionné = ${{ steps.env-secret.outputs.ENV_SECRET }}"
-            echo "DEBUG: PROD_ENV = $([ -n "${{ secrets.PROD_ENV }}" ] && echo 'a du contenu' || echo 'vide')"
-            echo "DEBUG: STG_ENV = $([ -n "${{ secrets.STG_ENV }}" ] && echo 'a du contenu' || echo 'vide')"
-            echo "DEBUG: DEV_ENV = $([ -n "${{ secrets.DEV_ENV }}" ] && echo 'a du contenu' || echo 'vide')"
+            echo "DEBUG: PROD_ENV = $([ -n "${{ secrets.prod_env }}" ] && echo 'a du contenu' || echo 'vide')"
+            echo "DEBUG: STG_ENV = $([ -n "${{ secrets.stg_env }}" ] && echo 'a du contenu' || echo 'vide')"
+            echo "DEBUG: DEV_ENV = $([ -n "${{ secrets.dev_env }}" ] && echo 'a du contenu' || echo 'vide')"
             
             SECRET_CONTENT="${{ secrets[steps.env-secret.outputs.ENV_SECRET] }}"
             echo "DEBUG: Contenu final = '$SECRET_CONTENT'"
