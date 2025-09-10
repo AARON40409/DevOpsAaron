@@ -119,13 +119,17 @@ jobs:
 
       - name: Create Kubernetes secret from GitHub secret
         run: |
-          SECRET_CONTENT="${{ secrets[steps.env-secret.outputs.ENV_SECRET] }}"
-           echo "DEBUG: Secret sélectionné = ${{ steps.env-secret.outputs.ENV_SECRET }}"
-          echo "DEBUG: Contenu = '$SECRET_CONTENT'"
-          
-          echo "$SECRET_CONTENT" | \
-          tr '\n' '\0' | xargs -0 -I {} kubectl create secret generic secret-game-secret \
-          --from-literal="{}" --dry-run=client -o yaml | kubectl apply -f -   
+            echo "DEBUG: Secret sélectionné = ${{ steps.env-secret.outputs.ENV_SECRET }}"
+            echo "DEBUG: PROD_ENV = $([ -n "${{ secrets.PROD_ENV }}" ] && echo 'a du contenu' || echo 'vide')"
+            echo "DEBUG: STG_ENV = $([ -n "${{ secrets.STG_ENV }}" ] && echo 'a du contenu' || echo 'vide')"
+            echo "DEBUG: DEV_ENV = $([ -n "${{ secrets.DEV_ENV }}" ] && echo 'a du contenu' || echo 'vide')"
+            
+            SECRET_CONTENT="${{ secrets[steps.env-secret.outputs.ENV_SECRET] }}"
+            echo "DEBUG: Contenu final = '$SECRET_CONTENT'"
+            
+            echo "$SECRET_CONTENT" | \
+            tr '\n' '\0' | xargs -0 -I {} kubectl create secret generic secret-game-secret \
+            --from-literal="{}" --dry-run=client -o yaml | kubectl apply -f -  
                   
       - name: Deploy to Kubernetes 
         run: |
