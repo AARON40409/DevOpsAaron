@@ -49,11 +49,11 @@ on:
         required: true
         description: "AWS secret access key"
       dev_env:
-        required: false
+        required: true
       stg_env:
-        required: false
+        required: true
       prod_env:
-        required: false  
+        required: true  
 
 jobs:
   build:
@@ -109,7 +109,7 @@ jobs:
       - name: Select environment secret
         id: env-secret
         run: |
-          if [ "${{ inputs.deploy_stage }}" == "stg" ]; then
+          if [ "${{ inputs.deploy_stage }}" ]; then
             echo "ENV_SECRET=stg_env" >> $GITHUB_OUTPUT
           elif [ "${{ inputs.deploy_stage }}" == "prod" ]; then
             echo "ENV_SECRET=prod_env" >> $GITHUB_OUTPUT
