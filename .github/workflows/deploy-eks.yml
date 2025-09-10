@@ -49,11 +49,11 @@ on:
         required: true
         description: "AWS secret access key"
       dev_env:
-        required: true
+        required: false  # ⭐ Changez à false ⭐
       stg_env:
-        required: true
+        required: false  # ⭐ Changez à false ⭐
       prod_env:
-        required: true  
+        required: false  # ⭐ Changez à false ⭐ 
 
 jobs:
   build:
