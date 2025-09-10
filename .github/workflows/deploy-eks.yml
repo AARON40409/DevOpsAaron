@@ -109,9 +109,9 @@ jobs:
       - name: Select environment secret
         id: env-secret
         run: |
-          if [ "${{ inputs.deploy_env }}" == "staging" ]; then
+          if [ "${{ inputs.deploy_stage }}" == "staging" ]; then
             echo "ENV_SECRET=STG_ENV" >> $GITHUB_OUTPUT
-          elif [ "${{ inputs.deploy_env }}" == "prod" ]; then
+          elif [ "${{ inputs.deploy_stage }}" == "prod" ]; then
             echo "ENV_SECRET=PROD_ENV" >> $GITHUB_OUTPUT
           else
             echo "ENV_SECRET=DEV_ENV" >> $GITHUB_OUTPUT
