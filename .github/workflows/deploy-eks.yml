@@ -107,27 +107,28 @@ jobs:
             --name ${{ inputs.eks_cluster_name }}
 
       - name: Create Kubernetes secret from GitHub secret
+        env:
+          DEV_ENV: ${{ secrets.dev_env }}
+          STG_ENV: ${{ secrets.stg_env }}
+          PROD_ENV: ${{ secrets.prod_env }}
         run: |
           # Sélection de l'environnement
           if [ "${{ inputs.deploy_stage }}" == "prod" ]; then
-            ENV_SECRET="prod_env"
+            ENV_SECRET="$PROD_ENV"
           elif [ "${{ inputs.deploy_stage }}" == "stg" ]; then
-            ENV_SECRET="stg_env"
+            ENV_SECRET="$STG_ENV"
           else
-            ENV_SECRET="dev_env"
+            ENV_SECRET="$DEV_ENV"
           fi
 
-          echo "DEBUG: Secret sélectionné = $ENV_SECRET"
-
-          # Récupération du contenu du secret correspondant
-          SECRET_CONTENT="${{ secrets[${ENV_SECRET}] }}"
+          echo "DEBUG: Secret sélectionné = ${{ inputs.deploy_stage }}"
 
           # Vérification du contenu (optionnel)
-          echo "DEBUG: Contenu final = '${SECRET_CONTENT:0:10}...'"  # Affiche juste les 10 premiers caractères
+          echo "DEBUG: Contenu final = '${ENV_SECRET:0:10}...'"  # Affiche juste les 10 premiers caractères
 
           # Création du secret Kubernetes sous une clé unique 'config'
           kubectl create secret generic secret-game-secret \
-            --from-literal=config="$SECRET_CONTENT" \
+            --from-literal=config="$ENV_SECRET" \
             --dry-run=client -o yaml | kubectl apply -f -
                   
       - name: Deploy to Kubernetes 
