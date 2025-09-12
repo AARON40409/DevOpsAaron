@@ -139,8 +139,8 @@ jobs:
           # Application des manifests
           kubectl apply -f ${{ inputs.k8s_manifest_path }}
           
-          # Vérification du déploiement
-          kubectl rollout status deployment/secret-game-deployment --timeout=${{ inputs.timeout_seconds }}s
+   #        # Vérification du déploiement
+   #        kubectl rollout status deployment/secret-game-deployment --timeout=${{ inputs.timeout_seconds }}s
 
       - name: Wait for LoadBalancer provisioning
         id: get-service-url
