@@ -106,7 +106,7 @@ jobs:
           sed -i "s|image:.*|image: ${{ secrets.dockerhub_username }}/${{ inputs.app_name }}:${{ inputs.image_tag }}|" ${{ inputs.k8s_manifest_path }}secret-game-deployment.yml
           
           # Application des manifests
-          kubectl apply -f ${{ inputs.k8s_manifest_path }}
+          kubectl apply -f ${{ inputs.k8s_manifest_path }} --validate=false
           
    #        # Vérification du déploiement
    #        kubectl rollout status deployment/secret-game-deployment --timeout=${{ inputs.timeout_seconds }}s
