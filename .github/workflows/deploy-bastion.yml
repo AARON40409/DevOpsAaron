@@ -1,0 +1,374 @@
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        required: true
+        description: "(mandatory) Application name"
+        type: string
+      image_tag:
+        required: true
+        description: "(mandatory) Docker image tag"
+        type: string
+      context:
+        required: true
+        description: "(mandatory) Context to use. Available options: [aws, dockerhub]"
+        type: string
+      with_commit_image:
+        required: false
+        description: (optional) Commit image to DockerHub
+        type: boolean
+        default: true
+      build-args:
+        required: false
+        description: (optional) Build arguments
+        type: string
+        default: ""
+      deploy_stage:
+        required: true
+        description: "(mandatory) Deploy stage"
+        type: string
+      deploy_port:
+        required: true
+        description: "(mandatory) Deploy port"
+        type: number
+      exposed_port:
+        required: false
+        description: "(optional) Exposed port. Default: 3000"
+        type: number
+        default: 3000
+      deploy_host:
+        required: false
+        description: "(optional) Deploy host. Default is 127.0.0.1"
+        type: string
+        default: "127.0.0.1"
+      dns_name:
+        required: false
+        description: "(optional) DNS name. Default is localhost"
+        type: string
+      run_args:
+        required: false
+        description: "(optional) Run arguments. Default is empty"
+        type: string
+        default: ""
+      post_run:
+        required: false
+        description: "(optional) Run any bash script after the container is up"
+        type: string
+        default: ""
+      # ====== NOUVEAU PARAMÈTRE ======
+      use_bastion:
+        required: false
+        description: "(optional) Use bastion host for SSH connection"
+        type: boolean
+        default: false
+
+    secrets:
+      aws_access_key_id:
+        required: false
+        description: (optional) AWS access key ID
+      aws_secret_access_key:
+        required: false
+        description: (optional) AWS secret access key
+      aws_default_region:
+        required: false
+        description: (optional) AWS default region
+      registry:
+        required: false
+        description: (optional) AWS ECR URL
+      dockerhub_username:
+        required: false
+        description: (optional) DockerHub username
+      dockerhub_password:
+        required: false
+        description: (optional) DockerHub password
+      build_env:
+        required: false
+        description: (optional) Build environment
+      deploy_env:
+        required: false
+        description: (optional) Deploy environment
+      deploy_network:
+        required: false
+        description: "(optional) Deploy networks. Default: bridge"
+      ssh_key:
+        required: true
+        description: SSH key for target server
+      ssh_user:
+        required: true
+        description: SSH user for target server
+      ssh_host:
+        required: true
+        description: SSH host for target server
+      ssh_port:
+        required: true
+        description: SSH port for target server
+      # ====== NOUVEAUX SECRETS POUR BASTION ======
+      bastion_ssh_key:
+        required: false
+        description: (optional) SSH key for bastion host
+      bastion_user:
+        required: false
+        description: (optional) SSH user for bastion host
+      bastion_host:
+        required: false
+        description: (optional) SSH host for bastion host
+      bastion_port:
+        required: false
+        description: (optional) SSH port for bastion host
+
+env:
+  build_env: ${{ secrets.build_env }}
+
+jobs:
+  build:
+    name: Build and push to ${{ inputs.context }}
+    runs-on: ubuntu-22.04
+
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure AWS credentials
+        if: ${{ inputs.context == 'aws' }}
+        run: |
+          mkdir -p ~/.aws || true
+          echo "[default]" > ~/.aws/credentials
+          echo "aws_access_key_id=${{ secrets.aws_access_key_id }}" >> ~/.aws/credentials
+          echo "aws_secret_access_key=${{ secrets.aws_secret_access_key }}" >> ~/.aws/credentials
+          echo "region=${{ secrets.aws_default_region }}" > ~/.aws/config
+
+      - name: Login to DockerHub
+        if: ${{ inputs.context == 'dockerhub' }}
+        run: |
+          echo ${{ secrets.dockerhub_password }} | docker login -u ${{ secrets.dockerhub_username }} --password-stdin
+      
+      - name: Set build environment
+        if: ${{ env.build_env }}
+        run: |
+          cat > .env <<EOF
+            ${{ secrets.build_env }}
+          EOF
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Build and Push image with provenance
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.registry }}/${{ inputs.app_name }}:${{ inputs.image_tag }}
+            ${{ secrets.registry }}/${{ inputs.app_name }}:${{ steps.sha.outputs.short }}
+          build-args: ${{ inputs.build-args }}
+          provenance: mode=max
+          sbom: true
+
+  deploy:
+    name: Deploy to ${{ inputs.deploy_stage }}
+    runs-on: ubuntu-22.04
+    needs: build
+    environment:
+      name: ${{ inputs.deploy_stage }}
+      url: https://${{ steps.dns_name.outputs.dns_name }}
+    steps:
+      - uses: actions/checkout@v6
+      
+      # ====== CONFIGURATION SSH AVEC OU SANS BASTION ======
+      - name: Configure SSH with Bastion
+        if: ${{ inputs.use_bastion == true }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          
+          # Créer les clés SSH
+          echo "${{ secrets.bastion_ssh_key }}" > ~/.ssh/bastion_key
+          echo "${{ secrets.ssh_key }}" > ~/.ssh/target_key
+          chmod 600 ~/.ssh/bastion_key ~/.ssh/target_key
+          
+          # Configurer SSH avec ProxyJump
+          cat > ~/.ssh/config <<EOF
+          Host bastion
+            HostName ${{ secrets.bastion_host }}
+            User ${{ secrets.bastion_user }}
+            Port ${{ secrets.bastion_port }}
+            IdentityFile ~/.ssh/bastion_key
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          
+          Host target
+            HostName ${{ secrets.ssh_host }}
+            User ${{ secrets.ssh_user }}
+            Port ${{ secrets.ssh_port }}
+            IdentityFile ~/.ssh/target_key
+            ProxyJump bastion
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
+          
+          echo "✅ SSH configured with bastion (ProxyJump)"
+      
+      - name: Configure SSH Direct (without Bastion)
+        if: ${{ inputs.use_bastion == false }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.ssh_key }}" > ~/.ssh/target_key
+          chmod 600 ~/.ssh/target_key
+          
+          cat > ~/.ssh/config <<EOF
+          Host target
+            HostName ${{ secrets.ssh_host }}
+            User ${{ secrets.ssh_user }}
+            Port ${{ secrets.ssh_port }}
+            IdentityFile ~/.ssh/target_key
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+          EOF
+          
+          echo "✅ SSH configured for direct connection"
+      
+      - name: Creating deploy script
+        run: |
+          cat <<EOF > deploy_${{ inputs.app_name }}.sh
+          #!/bin/bash
+          set -e
+
+          IMAGE=${{ secrets.registry }}/${{ inputs.app_name }}:${{ inputs.image_tag }}
+          NAME=${{ inputs.app_name }}
+          PORT=${{ inputs.deploy_port }}
+          NETWORK=${{ secrets.deploy_network || 'bridge' }}
+
+          echo "🚧 Deploying \$NAME"
+          echo "📝 Checking if a container named '\$NAME' exists..."
+          if [ ! "\$(docker container ls -q -f name=\\^\$NAME\$)" ]; then
+            if [ "\$(docker container ls -aq -f status=exited -f name=\$NAME)" ]; then
+              echo "📍 \$NAME has status 'exited', deleting..."
+              docker container rm \$NAME
+            fi
+          else
+            echo "📍 \$NAME found and running, deleting..."
+            docker container rm \$(docker container stop \$NAME)
+          fi
+
+          echo "🚀 Updating \$NAME..."
+          docker pull \$IMAGE
+          docker container run --name \$NAME \
+            -p ${{ inputs.deploy_host }}:\$PORT:${{ inputs.exposed_port }} \
+            --env-file /tmp/.env.\$NAME \
+            --network \$NETWORK \
+            --restart unless-stopped \
+            -d ${{ inputs.run_args }} \
+            \$IMAGE
+
+          echo "♻️ Cleanning..."
+          docker container prune -f
+          docker image prune -f
+
+          echo "✅ \$NAME deployed successfully!"
+
+          EOF
+      
+      - name: add post run script
+        if: ${{ inputs.post_run != '' }}
+        run: |
+          echo "Running post run script..."
+          cat <<EOF >> deploy_${{ inputs.app_name }}.sh
+
+          ${{ inputs.post_run }}
+          EOF
+          echo "Post run script added to deploy_${{ inputs.app_name }}.sh"
+      
+      # ====== DÉPLOIEMENT UNIFIÉ (utilise "target" pour les deux cas) ======
+      - name: Deploying
+        run: |
+          cat > /tmp/.env.${{ inputs.app_name }} <<EOF
+            ${{ secrets.deploy_env }}
+          EOF
+
+          # Copier les fichiers (utilise l'alias "target" configuré précédemment)
+          scp deploy_${{ inputs.app_name }}.sh target:/tmp/
+          scp /tmp/.env.${{ inputs.app_name }} target:/tmp/
+
+          # Login Docker on the server then execute the script
+          ssh target "
+            echo '${{ secrets.dockerhub_password }}' | docker login -u ${{ secrets.dockerhub_username }} --password-stdin
+            chmod +x /tmp/deploy_${{ inputs.app_name }}.sh
+            bash /tmp/deploy_${{ inputs.app_name }}.sh
+          "
+      
+      - name: Get DNS name
+        id: dns_name
+        run: |
+          if [ "${{ inputs.dns_name }}" == "" ]; then
+            echo "DNS name not provided, using default application name"
+            echo "dns_name=${{ inputs.app_name }}.dev-team-everest.xyz" >> $GITHUB_OUTPUT
+          else
+            echo "dns_name=${{ inputs.dns_name }}" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Check if DNS is already configured
+        id: dns_check
+        run: |
+          config_file_exists=$(ssh target "test -f /etc/nginx/sites-available/${{ steps.dns_name.outputs.dns_name }} && echo 'true' || echo 'false'")
+          if [ "$config_file_exists" == "true" ]; then
+            echo "dns_configured=true" >> $GITHUB_OUTPUT
+          else
+            echo "dns_configured=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Setup DNS
+        if: ${{ steps.dns_check.outputs.dns_configured == 'false' && steps.dns_name.outputs.dns_name != '' }}
+        run: |
+          dns_name="${{ steps.dns_name.outputs.dns_name }}"
+          ssh target "
+          sudo bash -c \"cat > /etc/nginx/sites-available/${dns_name} << 'EOF'
+          server {
+            listen 80;
+            server_name ${dns_name} www.${dns_name};
+
+            # Block DDoS and bots
+            include /etc/nginx/bots.d/ddos.conf;
+            include /etc/nginx/bots.d/blockbots.conf;
+
+            # Block PHP and XML files
+            location ~* \.(php|xml)$ {
+              return 404;
+            }
+
+            location / {
+              proxy_pass http://${{ inputs.deploy_host }}:${{ inputs.deploy_port }};
+              proxy_set_header Host \\\$host;
+              proxy_set_header X-Real-IP \\\$remote_addr;
+              proxy_set_header X-Forwarded-For \\\$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \\\$scheme;
+            }
+          }
+          EOF\"
+          sudo ln -sf /etc/nginx/sites-available/${dns_name} /etc/nginx/sites-enabled/
+          sudo nginx -t
+          sudo systemctl reload nginx
+          sudo certbot --nginx -d ${dns_name} --non-interactive --agree-tos
+          "
+          echo "✅ DNS setup completed!"
+      
+      - name: Cleanup
+        run: |
+          rm -f deploy_${{ inputs.app_name }}.sh
+          rm -f /tmp/.env.${{ inputs.app_name }}
+          ssh target "rm -f /tmp/deploy_${{ inputs.app_name }}.sh"
+          ssh target "rm -f /tmp/.env.${{ inputs.app_name }}"
+          echo "✅ Cleanup completed!"
+      
+      - name: Notify deployment
+        run: |
+          echo "🚀 Deployment to ${{ inputs.deploy_stage }} completed successfully!"
+          echo "🔗 Access your application at https://${{ steps.dns_name.outputs.dns_name }}"
+          echo "✅ Deployment completed!"
