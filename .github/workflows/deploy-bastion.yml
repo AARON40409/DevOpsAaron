@@ -183,7 +183,7 @@ jobs:
       
       # ====== CONFIGURATION SSH AVEC OU SANS BASTION ======
       - name: Configure SSH with Bastion
-        if: ${{ inputs.use_bastion == true }}
+        if: ${{ inputs.use_bastion == false }}
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -216,7 +216,7 @@ jobs:
           echo "✅ SSH configured with bastion (ProxyJump)"
       
       - name: Configure SSH Direct (without Bastion)
-        if: ${{ inputs.use_bastion == false }}
+        if: ${{ inputs.use_bastion == true }}
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
